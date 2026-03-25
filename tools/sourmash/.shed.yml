@@ -1,0 +1,21 @@
+categories:
+- Sequence Analysis
+- Metagenomics
+description: Sourmash — MinHash sketching and comparison of DNA sequences
+long_description: |
+  Sourmash is a command-line tool and Python library for computing and comparing
+  MinHash sketches of DNA sequences. It enables fast, alignment-free similarity
+  searches, taxonomic classification, and dataset comparisons at scale.
+  This suite wraps the sourmash CLI (version 4.x).
+name: sourmash
+owner: iuc
+homepage_url: https://sourmash.readthedocs.io/
+remote_repository_url: https://github.com/galaxyproject/tools-iuc/tree/main/tools/sourmash
+type: unrestricted
+auto_tool_repositories:
+  name_template: "{{ tool_id }}"
+  description_template: "Wrapper for sourmash: {{ tool_name }}."
+suite:
+  name: "suite_sourmash"
+  description: "A suite of Galaxy tools for sourmash MinHash sketching."
+  type: repository_suite_definition

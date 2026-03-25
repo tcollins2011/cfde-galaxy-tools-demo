@@ -1,0 +1,17 @@
+<macros>
+    <token name="@TOOL_VERSION@">4.8.4</token>
+    <token name="@VERSION_SUFFIX@">0</token>
+    <token name="@PROFILE@">25.0</token>
+
+    <xml name="requirements">
+        <requirements>
+            <requirement type="package" version="@TOOL_VERSION@">sourmash</requirement>
+        </requirements>
+    </xml>
+
+    <xml name="citations">
+        <citations>
+            <citation type="doi">10.21105/joss.00027</citation>
+        </citations>
+    </xml>
+</macros>

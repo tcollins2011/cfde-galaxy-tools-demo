@@ -1,0 +1,227 @@
+<tool id="sourmash_sketch_dna"
+      name="Sourmash Sketch DNA"
+      version="@TOOL_VERSION@+galaxy@VERSION_SUFFIX@"
+      profile="@PROFILE@">
+    <description>compute MinHash sketches from DNA sequences</description>
+    <macros>
+        <import>macros.xml</import>
+    </macros>
+    <xrefs>
+        <xref type="bio.tools">sourmash</xref>
+    </xrefs>
+    <expand macro="requirements"/>
+
+    <version_command>sourmash --version 2&gt;&amp;1 | head -1</version_command>
+
+    <command detect_errors="aggressive"><![CDATA[
+        sourmash sketch dna
+            #set $ksize_list = []
+            #for $k in $sketch_params.kmer_sizes
+                #silent $ksize_list.append('k=' + str($k))
+            #end for
+            #if str($sketch_params.abund) == 'true'
+                #set $abund_str = 'abund'
+            #else
+                #set $abund_str = 'noabund'
+            #end if
+            #set $param_str = ','.join($ksize_list) + ',scaled=' + str($sketch_params.scaled) + ',' + $abund_str
+            -p '$param_str'
+            $check_sequence
+            $singleton
+            #if str($merge_name).strip()
+                --merge '$merge_name'
+            #end if
+            -o output.sig.zip
+            #for $f in $input_sequences
+                '$f'
+            #end for
+    ]]></command>
+
+    <inputs>
+        <param name="input_sequences"
+               type="data"
+               format="fasta,fasta.gz,fastq,fastq.gz"
+               multiple="true"
+               label="Input sequences"
+               help="FASTA or FASTQ files, uncompressed or gzip-compressed."/>
+
+        <section name="sketch_params" title="Sketch parameters" expanded="true">
+            <param name="kmer_sizes"
+                   type="select"
+                   multiple="true"
+                   label="k-mer size(s)"
+                   help="One or more k-mer sizes to sketch. Multiple sizes produce multiple sketches in the output.">
+                <option value="21">21</option>
+                <option value="31" selected="true">31</option>
+                <option value="51">51</option>
+                <validator type="no_options" message="Select at least one k-mer size."/>
+            </param>
+            <param argument="--scaled"
+                   type="integer"
+                   value="1000"
+                   min="1"
+                   max="1000000"
+                   label="Scaled factor"
+                   help="1 in N k-mers are kept. Smaller values produce larger, more sensitive sketches."/>
+            <param name="abund"
+                   type="boolean"
+                   truevalue="true"
+                   falsevalue="false"
+                   checked="false"
+                   label="Track k-mer abundances"
+                   help="When enabled, k-mer counts are stored in the sketch (abund). Default: no abundance tracking (noabund)."/>
+        </section>
+
+        <param argument="--check-sequence"
+               type="boolean"
+               truevalue="--check-sequence"
+               falsevalue=""
+               checked="false"
+               label="Check sequence validity"
+               help="Raise an error if any input sequence contains characters that are not valid DNA."/>
+
+        <param argument="--singleton"
+               type="boolean"
+               truevalue="--singleton"
+               falsevalue=""
+               checked="false"
+               label="Sketch each record individually"
+               help="Compute one signature per sequence record rather than one per input file."/>
+
+        <param argument="--merge"
+               name="merge_name"
+               type="text"
+               value=""
+               optional="true"
+               label="Merge all inputs under this name (optional)"
+               help="If set, all input files are merged into a single signature with this name.">
+            <validator type="regex"
+                       message="Name may contain letters, digits, spaces, hyphens, and underscores only.">[A-Za-z0-9 _\-]*</validator>
+        </param>
+
+        <param argument="--merge"
+               name="HI_MIKE"
+               type="text"
+               value=""
+               optional="true"
+               label="HI MIKE (optional)"
+               help="If set, all input files are merged into a single signature with this name.">
+            <validator type="regex"
+                       message="Name may contain letters, digits, spaces, hyphens, and underscores only.">[A-Za-z0-9 _\-]*</validator>
+        </param>
+    </inputs>
+
+    <outputs>
+        <data name="output_signatures"
+              format="zip"
+              from_work_dir="output.sig.zip"
+              label="${tool.name} on ${on_string}"/>
+    </outputs>
+
+    <tests>
+        <!-- Test 1: default k=31, scaled=1 (small sequences need scaled=1 to capture hashes) -->
+        <test expect_num_outputs="1">
+            <param name="input_sequences" value="test_input.fasta"/>
+            <section name="sketch_params">
+                <param name="kmer_sizes" value="31"/>
+                <param name="scaled" value="1"/>
+                <param name="abund" value="false"/>
+            </section>
+            <param name="check_sequence" value="false"/>
+            <param name="singleton" value="false"/>
+            <output name="output_signatures">
+                <assert_contents>
+                    <has_size min="100"/>
+                </assert_contents>
+            </output>
+        </test>
+        <!-- Test 2: multiple k-mer sizes with abundance tracking -->
+        <test expect_num_outputs="1">
+            <param name="input_sequences" value="test_input.fasta"/>
+            <section name="sketch_params">
+                <param name="kmer_sizes" value="21,31"/>
+                <param name="scaled" value="1"/>
+                <param name="abund" value="true"/>
+            </section>
+            <param name="check_sequence" value="true"/>
+            <param name="singleton" value="false"/>
+            <output name="output_signatures">
+                <assert_contents>
+                    <has_size min="100"/>
+                </assert_contents>
+            </output>
+        </test>
+        <!-- Test 3: singleton mode (one sketch per sequence record) -->
+        <test expect_num_outputs="1">
+            <param name="input_sequences" value="test_input.fasta"/>
+            <section name="sketch_params">
+                <param name="kmer_sizes" value="31"/>
+                <param name="scaled" value="1"/>
+                <param name="abund" value="false"/>
+            </section>
+            <param name="singleton" value="true"/>
+            <output name="output_signatures">
+                <assert_contents>
+                    <has_size min="100"/>
+                </assert_contents>
+            </output>
+        </test>
+    </tests>
+
+    <help><![CDATA[
+**Sourmash Sketch DNA**
+
+Computes MinHash sketches (also called *signatures*) from DNA sequences.
+Sketches are compact representations of sequence content that enable fast
+similarity searches, taxonomic classification, and dataset comparisons without
+alignment.
+
+-----
+
+**Inputs**
+
+One or more FASTA or FASTQ files (uncompressed or gzip-compressed).
+
+-----
+
+**Sketch parameters**
+
+The output sketch is controlled by three values:
+
+- **k-mer size** (default 31): shorter k-mers are more sensitive; longer k-mers are more specific.
+- **Scaled factor** (default 1000): 1 in N k-mers are retained; smaller values produce larger, more sensitive sketches.
+- **Abundance tracking** (default off): when enabled, k-mer counts are stored in the sketch for relative-abundance queries.
+
+You may select multiple k-mer sizes; each produces a separate sketch in the output file.
+
+-----
+
+**Outputs**
+
+A single sourmash signature collection in zip format (``output.sig.zip``),
+compatible with all sourmash ``compare``, ``search``, and ``gather`` commands.
+
+-----
+
+**Tips**
+
+- Use ``scaled=1000`` (default) for whole-genome comparisons.
+- Use ``scaled=100`` for metagenome comparisons where sensitivity matters more.
+- Enable **singleton** mode to produce one sketch per FASTA record rather than one per file (useful for individual gene or contig sketches).
+- Set a **merge name** when sketching multiple files representing the same organism and you want a single combined sketch.
+
+-----
+
+
+HI MIKE
+
+**References**
+
+Brown CT and Irber L (2016). sourmash: a library for MinHash sketching of DNA.
+*Journal of Open Source Software*, 1(5), 27. doi:10.21105/joss.00027
+
+Full documentation: https://sourmash.readthedocs.io/en/latest/sourmash-sketch.html
+    ]]></help>
+
+    <expand macro="citations"/>
+</tool>
