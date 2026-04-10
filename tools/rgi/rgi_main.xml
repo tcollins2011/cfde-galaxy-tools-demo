@@ -1,0 +1,283 @@
+<tool id="rgi_main"
+      name="RGI main"
+      version="@TOOL_VERSION@+galaxy@VERSION_SUFFIX@"
+      profile="@PROFILE@">
+    <description>identify antimicrobial resistance genes using CARD</description>
+    <macros>
+        <import>macros.xml</import>
+    </macros>
+    <xrefs>
+        <xref type="bio.tools">rgi</xref>
+    </xrefs>
+    <expand macro="requirements"/>
+
+    <version_command>echo "@TOOL_VERSION@"</version_command>
+
+    <command detect_errors="aggressive"><![CDATA[
+        mkdir -p staging &&
+        rgi load @CMD_CARD_LOAD_ARGS@ --local &&
+        rgi main
+            -i '$input_sequence'
+            -o staging/output
+            -t '$input_type'
+            -a '$alignment_tool'
+            -n \${GALAXY_SLOTS:-4}
+            -d '$data_type'
+            #if str($input_type) == "contig"
+                -g '$orf_options.orf_finder'
+            #end if
+            #if str($input_type) == "contig"
+                $orf_options.split_prodigal_jobs
+            #end if
+            $hit_inclusion.include_loose
+            $hit_inclusion.include_nudge
+            $hit_inclusion.low_quality
+            --local
+            --clean
+    ]]></command>
+
+    <inputs>
+        <param argument="-i"
+               name="input_sequence"
+               type="data"
+               format="fasta,fasta.gz"
+               label="Input sequences"
+               help="FASTA or gzip-compressed FASTA file containing contigs or protein sequences."/>
+
+        <expand macro="card_source_param"/>
+
+        <param argument="-t"
+               name="input_type"
+               type="select"
+               label="Input type"
+               help="Whether the input sequences are nucleotide contigs or translated protein sequences.">
+            <option value="contig" selected="true">Contig (nucleotide)</option>
+            <option value="protein">Protein</option>
+        </param>
+
+        <param argument="-a"
+               name="alignment_tool"
+               type="select"
+               label="Alignment tool"
+               help="DIAMOND is substantially faster for large inputs; BLAST is more sensitive.">
+            <option value="DIAMOND" selected="true">DIAMOND (faster)</option>
+            <option value="BLAST">BLAST (more sensitive)</option>
+        </param>
+
+        <param argument="-d"
+               name="data_type"
+               type="select"
+               label="Sequence data type"
+               help="Genomic context of the input sequences. Affects result reporting categories.">
+            <option value="NA" selected="true">Not specified (NA)</option>
+            <option value="wgs">Whole-genome shotgun (wgs)</option>
+            <option value="plasmid">Plasmid</option>
+            <option value="chromosome">Chromosome</option>
+        </param>
+
+        <section name="orf_options" title="ORF finding options" expanded="false">
+            <param argument="-g"
+                   name="orf_finder"
+                   type="select"
+                   label="ORF finding tool"
+                   help="Only applies when input type is Contig. PYRODIGAL is a faster Python reimplementation of PRODIGAL.">
+                <option value="PRODIGAL" selected="true">PRODIGAL</option>
+                <option value="PYRODIGAL">PYRODIGAL</option>
+            </param>
+            <param argument="--split_prodigal_jobs"
+                   type="boolean"
+                   truevalue="--split_prodigal_jobs"
+                   falsevalue=""
+                   checked="false"
+                   label="Split Prodigal jobs"
+                   help="Run multiple Prodigal ORF prediction jobs simultaneously, one per contig. Only applies when input type is Contig. Useful for assemblies with many contigs when multiple CPU cores are available."/>
+        </section>
+
+        <section name="hit_inclusion" title="Hit inclusion options" expanded="false">
+            <param argument="--include_loose"
+                   type="boolean"
+                   truevalue="--include_loose"
+                   falsevalue=""
+                   checked="false"
+                   label="Include loose hits"
+                   help="Report hits that only partially meet curated CARD model thresholds. Increases sensitivity at the cost of specificity."/>
+            <param argument="--include_nudge"
+                   type="boolean"
+                   truevalue="--include_nudge"
+                   falsevalue=""
+                   checked="false"
+                   label="Include nudged hits (loose promoted to strict)"
+                   help="Include hits nudged from Loose to Strict based on RGI's internal algorithm."/>
+            <param argument="--low_quality"
+                   type="boolean"
+                   truevalue="--low_quality"
+                   falsevalue=""
+                   checked="false"
+                   label="Low quality / short contigs mode"
+                   help="Use for assemblies with short or partial gene sequences. Adjusts ORF detection thresholds accordingly."/>
+        </section>
+    </inputs>
+
+    <outputs>
+        <data name="output_txt"
+              format="tabular"
+              from_work_dir="staging/output.txt"
+              label="${tool.name} on ${on_string}: AMR results (tabular)"/>
+        <data name="output_json"
+              format="json"
+              from_work_dir="staging/output.json"
+              label="${tool.name} on ${on_string}: AMR results (JSON)"/>
+    </outputs>
+
+    <tests>
+        <!-- Test 1: contig mode, BLAST, history card.json -->
+        <test expect_num_outputs="2">
+            <param name="input_sequence" value="test_input.fasta"/>
+            <conditional name="card_source">
+                <param name="source" value="history"/>
+                <param name="card_json" value="card_minimal.json"/>
+            </conditional>
+            <param name="input_type" value="contig"/>
+            <param name="alignment_tool" value="BLAST"/>
+            <param name="data_type" value="NA"/>
+            <section name="orf_options">
+                <param name="orf_finder" value="PRODIGAL"/>
+            </section>
+            <section name="hit_inclusion">
+                <param name="include_loose" value=""/>
+                <param name="include_nudge" value=""/>
+                <param name="low_quality" value=""/>
+            </section>
+            <output name="output_txt">
+                <assert_contents>
+                    <has_text text="ORF_ID"/>
+                    <has_text text="Best_Hit_ARO"/>
+                    <has_text text="APH(3')-VIa"/>
+                </assert_contents>
+            </output>
+            <output name="output_json">
+                <assert_contents>
+                    <has_text text="ORF_ID"/>
+                </assert_contents>
+            </output>
+        </test>
+        <!-- Test 2: contig mode, BLAST, include_loose, wgs data type -->
+        <test expect_num_outputs="2">
+            <param name="input_sequence" value="test_input.fasta"/>
+            <conditional name="card_source">
+                <param name="source" value="history"/>
+                <param name="card_json" value="card_minimal.json"/>
+            </conditional>
+            <param name="input_type" value="contig"/>
+            <param name="alignment_tool" value="BLAST"/>
+            <param name="data_type" value="wgs"/>
+            <section name="hit_inclusion">
+                <param name="include_loose" value="--include_loose"/>
+                <param name="include_nudge" value="--include_nudge"/>
+            </section>
+            <output name="output_txt">
+                <assert_contents>
+                    <has_text text="ORF_ID"/>
+                    <has_text text="Best_Hit_ARO"/>
+                </assert_contents>
+            </output>
+            <output name="output_json">
+                <assert_contents>
+                    <has_size min="10"/>
+                </assert_contents>
+            </output>
+        </test>
+        <!-- Test 3: protein mode -->
+        <test expect_num_outputs="2">
+            <param name="input_sequence" value="test_input_protein.fasta"/>
+            <conditional name="card_source">
+                <param name="source" value="history"/>
+                <param name="card_json" value="card_minimal.json"/>
+            </conditional>
+            <param name="input_type" value="protein"/>
+            <param name="alignment_tool" value="BLAST"/>
+            <param name="data_type" value="NA"/>
+            <output name="output_txt">
+                <assert_contents>
+                    <has_text text="ORF_ID"/>
+                    <has_text text="NDM-1"/>
+                </assert_contents>
+            </output>
+            <output name="output_json">
+                <assert_contents>
+                    <has_text text="NDM-1"/>
+                </assert_contents>
+            </output>
+        </test>
+    </tests>
+
+    <help><![CDATA[
+**RGI main — Resistance Gene Identifier**
+
+Identifies antimicrobial resistance (AMR) genes and mutations in genomic or
+protein sequences by aligning them against the Comprehensive Antibiotic
+Resistance Database (CARD).
+
+-----
+
+**Inputs**
+
+- **Input sequences** — FASTA file of contigs (nucleotide) or protein sequences.
+  gzip-compressed FASTA is accepted.
+- **CARD database** — Either select a pre-installed CARD release (set up by your
+  Galaxy administrator) or supply a ``card.json`` file from your history.
+  Download the latest release from https://card.mcmaster.ca/download.
+
+-----
+
+**Input type**
+
+- *Contig* (default) — nucleotide sequences. RGI uses PRODIGAL or PYRODIGAL to
+  predict ORFs before alignment.
+- *Protein* — translated amino acid sequences. ORF prediction is skipped.
+
+-----
+
+**Alignment tool**
+
+- *DIAMOND* (default) — much faster for large inputs (thousands of contigs);
+  slightly reduced sensitivity compared to BLAST.
+- *BLAST* — more sensitive; use when thoroughness matters more than speed.
+
+-----
+
+**Hit inclusion options**
+
+By default, RGI reports only **Perfect** and **Strict** hits — sequences that
+meet curated CARD model thresholds.
+
+- *Include loose hits* — also reports Loose hits that partially satisfy model
+  thresholds. Useful for exploratory analysis; increases false-positive rate.
+- *Include nudged hits* — reports Loose hits that RGI promotes to Strict based
+  on contextual evidence.
+- *Low quality / short contigs* — adjusts ORF detection for assemblies with
+  truncated or partial genes (e.g., short-read assemblies).
+
+-----
+
+**Outputs**
+
+- **AMR results (tabular)** — tab-delimited summary of all detected AMR genes,
+  including ORF coordinates, CARD ARO accession, drug class, resistance
+  mechanism, and alignment scores.
+- **AMR results (JSON)** — full JSON output with all hit details, suitable for
+  downstream parsing or visualization with the CARD web interface.
+
+-----
+
+**References**
+
+Alcock et al. (2020). CARD 2020: antibiotic resistome surveillance with the
+Comprehensive Antibiotic Resistance Database. *Nucleic Acids Research*, 48(D1),
+D517–D525. doi:10.1093/nar/gkz935
+
+RGI GitHub: https://github.com/arpcard/rgi
+    ]]></help>
+
+    <expand macro="citations"/>
+</tool>
